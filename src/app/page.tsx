@@ -4,6 +4,96 @@ import { XMLParser } from "fast-xml-parser";
 import styles from "./page.module.css";
 import DromoUploader from "dromo-uploader-react";
 
+const parseMT101 = (buffer: ArrayBuffer): Promise<string[][]> => {
+  const text = new TextDecoder().decode(buffer);
+  const lines = text.split(/\r?\n/);
+
+  // Define column mappings (human-readable names)
+  const mt101Columns = [
+    { label: "Sender's Reference", key: "20" },
+    { label: "Customer Specified Reference", key: "21R" },
+    { label: "Transaction Reference", key: "21" },
+    { label: "F/X Deal Reference", key: "21F" },
+    { label: "Instruction Code", key: "23E" },
+    { label: "Account Identification", key: "25" },
+    { label: "Statement Number / Sequence Number", key: "28D" },
+    { label: "Requested Execution Date", key: "30" },
+    { label: "Amount & Currency", key: "32B" },
+    { label: "Ordering Customer (A)", key: "50A" },
+    { label: "Ordering Customer (F)", key: "50F" },
+    { label: "Ordering Customer (H)", key: "50H" },
+    { label: "Ordering Institution (A)", key: "52A" },
+    { label: "Ordering Institution (D)", key: "52D" },
+    { label: "Sender’s Correspondent (A)", key: "53A" },
+    { label: "Sender’s Correspondent (B)", key: "53B" },
+    { label: "Sender’s Correspondent (D)", key: "53D" },
+    { label: "Receiver’s Correspondent (A)", key: "54A" },
+    { label: "Receiver’s Correspondent (B)", key: "54B" },
+    { label: "Receiver’s Correspondent (D)", key: "54D" },
+    { label: "Third Reimbursement Institution (A)", key: "55A" },
+    { label: "Third Reimbursement Institution (B)", key: "55B" },
+    { label: "Third Reimbursement Institution (D)", key: "55D" },
+    { label: "Intermediary Institution (A)", key: "56A" },
+    { label: "Intermediary Institution (C)", key: "56C" },
+    { label: "Intermediary Institution (D)", key: "56D" },
+    { label: "Account With Institution (A)", key: "57A" },
+    { label: "Account With Institution (B)", key: "57B" },
+    { label: "Account With Institution (D)", key: "57D" },
+    { label: "Beneficiary Customer", key: "59" },
+    { label: "Beneficiary Customer (F)", key: "59F" },
+    { label: "Remittance Information", key: "70" },
+    { label: "Details of Charges", key: "71A" },
+    { label: "Sender’s Charges", key: "71F" },
+    { label: "Receiver’s Charges", key: "71G" },
+    { label: "Bank to Bank Information", key: "72" },
+    { label: "Regulatory Reporting", key: "77B" },
+    { label: "Envelope Contents", key: "77T" },
+    { label: "MPH Bank Name", key: "MPH01" },
+    { label: "MPH Account Number", key: "MPH02" },
+    { label: "MPH SWIFT Code", key: "MPH03" },
+    { label: "MPH Address Line 1", key: "MPH04" },
+    { label: "MPH Address Line 2", key: "MPH05" },
+    { label: "MPH Address Line 3", key: "MPH06" },
+    { label: "MPH Country", key: "MPH07" }
+  ];
+
+  const transactions: string[][] = [];
+  transactions.push(mt101Columns.map(col => col.label)); // Add human-readable headers
+
+  let currentTransaction: Record<string, string> = {};
+  let lastTag = "";
+
+  for (const line of lines) {
+    const match = line.match(/^:(\d{2}[A-Z0-9]*?):(.*)/);
+
+    if (match) {
+      const [, tag, value] = match;
+
+      // If we encounter a new ":21:" transaction reference, save the previous transaction
+      if (tag === "21" && Object.keys(currentTransaction).length > 0) {
+        transactions.push(mt101Columns.map(col => currentTransaction[col.key] || ""));
+        currentTransaction = {};
+      }
+
+      // Map raw tag to human-readable key
+      if (mt101Columns.some(col => col.key === tag)) {
+        currentTransaction[tag] = value.trim();
+        lastTag = tag;
+      }
+    } else if (lastTag) {
+      // Append multiline fields to the last tag
+      currentTransaction[lastTag] += ` ${line.trim()}`;
+    }
+  }
+
+  // Add the last transaction
+  if (Object.keys(currentTransaction).length > 0) {
+    transactions.push(mt101Columns.map(col => currentTransaction[col.key] || ""));
+  }
+
+  return transactions;
+}
+
 const txtParser = async (buffer: ArrayBuffer): Promise<string[][]> => {
   const decoder = new TextDecoder('utf-8');
   const text = decoder.decode(buffer);
@@ -177,15 +267,15 @@ const xmlParser = async (buffer: ArrayBuffer): Promise<string[][]> => {
 export default function Home() {
   return (
     <div className={styles.page}>
-      <DromoUploader 
-        licenseKey=""  
+      <DromoUploader
+        licenseKey=""
         fileParsers={[
           {
             extensions: ["xml"],
             parseFile: xmlParser
           }
         ]}
-        fields={[ 
+        fields={[
           { label: "Message ID", key: "MsgId" },
           { label: "Creation Date/Time", key: "CreDtTm" },
           { label: "Number of Transactions", key: "NbOfTxs" },
@@ -216,25 +306,25 @@ export default function Home() {
           { label: "Creditor Account IBAN", key: "CdtrAcct_IBAN" },
           { label: "Purpose Code", key: "Purp_Cd" },
           { label: "Remittance Information Unstructured", key: "RmtInf_Ustrd" }
-        ]} 
-        settings={{ 
-          importIdentifier: "XML" 
-        }} 
-        user={{ 
-          id: "1", 
-          name: "Jane Doe", 
-          email: "jane@dromo.io", 
-          companyId: "Dromo", 
-          companyName: "12345" 
-        }} 
+        ]}
+        settings={{
+          importIdentifier: "XML"
+        }}
+        user={{
+          id: "1",
+          name: "Jane Doe",
+          email: "jane@dromo.io",
+          companyId: "Dromo",
+          companyName: "12345"
+        }}
         onResults={((response) => 
           console.log("Response:", response) 
         )} 
-      > 
+      >
         Launch XML Parser 
       </DromoUploader>
-      <DromoUploader 
-        licenseKey=""  
+      <DromoUploader
+        licenseKey=""
         fileParsers={[
           {
             extensions: ["txt"],
@@ -248,21 +338,93 @@ export default function Home() {
           { label: "Currency Code", key: "CurrencyCode" },
           { label: "Account Number", key: "AccountNumber" },
         ]}
-        settings={{ 
-          importIdentifier: "TXT" 
+        settings={{
+          importIdentifier: "TXT"
+        }}
+        user={{
+          id: "1",
+          name: "Jane Doe",
+          email: "jane@dromo.io",
+          companyId: "Dromo",
+          companyName: "12345"
         }} 
-        user={{ 
-          id: "1", 
-          name: "Jane Doe", 
-          email: "jane@dromo.io", 
-          companyId: "Dromo", 
-          companyName: "12345" 
-        }} 
-        onResults={((response) => 
-          console.log("Response:", response) 
-        )} 
+        onResults={((response) =>
+          console.log("Response:", response)
+        )}
       >
         Launch TXT Parser
+      </DromoUploader>
+      <DromoUploader
+        licenseKey=""
+        fileParsers={[
+          {
+            extensions: ["txt"],
+            parseFile: parseMT101
+          }
+        ]}
+        fields={[
+          { label: "Transaction Index", key: "TransactionIndex" },
+          { label: "Sender's Reference", key: "20" },
+          { label: "Customer Specified Reference", key: "21R" },
+          { label: "Transaction Reference", key: "21" },
+          { label: "F/X Deal Reference", key: "21F" },
+          { label: "Instruction Code", key: "23E" },
+          { label: "Account Identification", key: "25" },
+          { label: "Statement Number / Sequence Number", key: "28D" },
+          { label: "Requested Execution Date", key: "30" },
+          { label: "Amount & Currency", key: "32B" },
+          { label: "Ordering Customer (A)", key: "50A" },
+          { label: "Ordering Customer (F)", key: "50F" },
+          { label: "Ordering Customer (H)", key: "50H" },
+          { label: "Ordering Institution (A)", key: "52A" },
+          { label: "Ordering Institution (D)", key: "52D" },
+          { label: "Sender’s Correspondent (A)", key: "53A" },
+          { label: "Sender’s Correspondent (B)", key: "53B" },
+          { label: "Sender’s Correspondent (D)", key: "53D" },
+          { label: "Receiver’s Correspondent (A)", key: "54A" },
+          { label: "Receiver’s Correspondent (B)", key: "54B" },
+          { label: "Receiver’s Correspondent (D)", key: "54D" },
+          { label: "Third Reimbursement Institution (A)", key: "55A" },
+          { label: "Third Reimbursement Institution (B)", key: "55B" },
+          { label: "Third Reimbursement Institution (D)", key: "55D" },
+          { label: "Intermediary Institution (A)", key: "56A" },
+          { label: "Intermediary Institution (C)", key: "56C" },
+          { label: "Intermediary I  nstitution (D)", key: "56D" },
+          { label: "Account With Institution (A)", key: "57A" },
+          { label: "Account With Institution (B)", key: "57B" },
+          { label: "Account With Institution (D)", key: "57D" },
+          { label: "Beneficiary Customer", key: "59" },
+          { label: "Beneficiary Customer (F)", key: "59F" },
+          { label: "Remittance Information", key: "70" },
+          { label: "Details of Charges", key: "71A" },
+          { label: "Sender’s Charges", key: "71F" },
+          { label: "Receiver’s Charges", key: "71G" },
+          { label: "Bank to Bank Information", key: "72" },
+          { label: "Regulatory Reporting", key: "77B" },
+          { label: "Envelope Contents", key: "77T" },
+          { label: "MPH Bank Name", key: "MPH01" },
+          { label: "MPH Account Number", key: "MPH02" },
+          { label: "MPH SWIFT Code", key: "MPH03" },
+          { label: "MPH Address Line 1", key: "MPH04" },
+          { label: "MPH Address Line 2", key: "MPH05" },
+          { label: "MPH Address Line 3", key: "MPH06" },
+          { label: "MPH Country", key: "MPH07" }
+        ]}
+        settings={{
+          importIdentifier: "TXT"
+        }}
+        user={{
+          id: "1",
+          name: "Jane Doe",
+          email: "jane@dromo.io",
+          companyId: "Dromo",
+          companyName: "12345"
+        }}
+        onResults={((response) =>
+          console.log("Response:", response)
+        )}
+      >
+        Launch M101 TXT Parser
       </DromoUploader>
     </div>
   );
